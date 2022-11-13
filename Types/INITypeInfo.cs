@@ -8,32 +8,48 @@ namespace INISerializer;
 
 public class INITypeInfo
 {
-    public readonly ReadOnlyDictionary<string, INIRowInfo> TypesName;
+    private static readonly ReadOnlyCollection<Type> baseTypes =new(new Type[]
+    {
+        typeof(double),
+        typeof(string),
+        typeof(short),
+        typeof(float),
+        typeof(char),
+        typeof(long),
+        typeof(bool),
+        typeof(int)
+    });
+
+    public readonly ReadOnlyDictionary<string, INIPropertyInfo> TypesName;
+    public readonly INISerializerOptions Options;
 
     public INITypeInfo(INISerializerOptions? options, Type inputType)
     {
-        options ??= new();
-        TypesName = new(GetPropertiesInfo(options, inputType.GetProperties()));
+        Options = options is null ? new() : options;
+
+        TypesName = new(GetPropertiesInfo(inputType.GetProperties()));
     }
 
-    private static Dictionary<string, INIRowInfo> GetPropertiesInfo(INISerializerOptions options, params PropertyInfo[] properties)
+    private Dictionary<string, INIPropertyInfo> GetPropertiesInfo(params PropertyInfo[] properties)
     {
         IEnumerable<PropertyInfo> propertiesInfos = properties.Where(property =>
-            property.IsCollectible == !options.IgnoreCollectible);
+            property.IsCollectible == !Options.IgnoreCollectible);
 
-        Dictionary<string, INIRowInfo> output = new(propertiesInfos.Count());
+        Dictionary<string, INIPropertyInfo> output = new(propertiesInfos.Count());
 
         string propertyNewName;
         string comment;
         bool isIgnoreProperty;
+        Dictionary<string, INIPropertyInfo>? INIpropertyInfos;
 
         foreach (PropertyInfo property in propertiesInfos)
         {
+            INIpropertyInfos = null;
             propertyNewName = property.Name;
             comment = string.Empty;
             isIgnoreProperty = false;
 
-            if (!options.IgnoreAttributes)
+            if (!Options.IgnoreAttributes)
             {
                 foreach (object attribute in property.GetCustomAttributes(false))
                 {
@@ -48,7 +64,7 @@ public class INITypeInfo
 
                     if (attribute is INICommentAttribute commentAttribute)
                     {
-                        if (!options.IgnoreComments)
+                        if (!Options.IgnoreComments)
                             comment = commentAttribute.Comment;
                     }
 
@@ -60,10 +76,13 @@ public class INITypeInfo
                     continue;
             }
 
-            if (options.IgnoreCase)
+            if (Options.IgnoreCase)
                 propertyNewName = propertyNewName.ToLower();
 
-            output.Add(property.Name, new INIRowInfo(options.InlineComments, propertyNewName, comment));
+            if (!baseTypes.Contains(property.GetType()))
+                INIpropertyInfos = new(new INITypeInfo(Options, property.GetType()).TypesName);
+
+            output.Add(property.Name, new INIPropertyInfo(Options.InlineComments, propertyNewName, comment, INIpropertyInfos));
         }
 
         return output;
